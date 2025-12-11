@@ -1,0 +1,167 @@
+{
+  "name": "Создание базы",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        64,
+        -368
+      ],
+      "id": "b7055a8e-d2ec-401d-9f28-38e4332c6ebb",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "const studentId = 24; \nconst baseUrl = \"http://212.237.219.35:8080\"; \nconst results = [];\n\nfor (let page = 0; page <= 5; page++) {\n    try {\n        const response = await this.helpers.httpRequest({\n            method: 'GET',\n            url: `${baseUrl}/students/${studentId}/cms/spares?page=${page}&size=10`,\n            json: true\n        });\n        \n        \n        if (Array.isArray(response)) {\n            response.forEach(item => results.push(item));\n        } \n        \n        else if (response && typeof response === 'object') {\n            \n            for (const key in response) {\n                if (Array.isArray(response[key])) {\n                    response[key].forEach(item => results.push(item));\n                    break;\n                }\n            }\n        }\n    } catch (error) {\n        console.log(`Страница ${page} ошибка: ${error.message}`);\n    }\n}\n\n\nconst output = results.map(item => ({\n    json: item\n}));\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        -368
+      ],
+      "id": "473ec1ef-a94c-4bc7-b47e-cbc5c23b4e4b",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const src = $items('Norm');  \n\nconst codes = [...new Set(\n  src\n    .map(i => i.json?._e?.code)\n    .filter(Boolean)\n    .map(c => `'${String(c).replace(/'/g,\"''\")}'`)\n)];\n\nreturn [{ json: { codes } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        -368
+      ],
+      "id": "cc881255-f5f2-4b39-84fc-d3ff939e1739",
+      "name": "Collect Codes"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "BEGIN;\n\nUPDATE spares_history\n   SET is_current = FALSE,\n       valid_to   = NOW()\n WHERE is_current = TRUE\n   AND spare_code NOT IN ({{ $json[\"codes\"].join(\",\") }});\n\nCOMMIT;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        928,
+        -368
+      ],
+      "id": "5611288f-bb13-4c3a-a5e1-9d346ae9543d",
+      "name": "Close missing",
+      "credentials": {
+        "postgres": {
+          "id": "E1PX1YEF8yIZava3",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "BEGIN;\n\nUPDATE spares_history\n   SET is_current = FALSE,\n       valid_to   = NOW()\n WHERE spare_code = '{{$json[\"_e\"][\"code\"]}}'\n   AND is_current = TRUE\n   AND NOT (\n     spare_name        = '{{$json[\"_e\"][\"name\"]}}' AND\n     spare_description = '{{$json[\"_e\"][\"descr\"]}}' AND\n     spare_type        = '{{$json[\"_e\"][\"type\"]}}' AND\n     spare_status      = '{{$json[\"_e\"][\"status\"]}}' AND\n     price             = {{$json[\"priceNum\"]}} AND\n     quantity          = {{$json[\"quantity\"]}} AND\n     source_updated_at = '{{$json[\"_e\"][\"updatedAt\"]}}'::timestamp\n   );\n\nINSERT INTO spares_history\n(spare_code, spare_name, spare_description, spare_type, spare_status,\n price, quantity, source_updated_at, valid_from, is_current,\n price_raw, source_updated_at_raw)\nSELECT\n  '{{$json[\"_e\"][\"code\"]}}',\n  '{{$json[\"_e\"][\"name\"]}}',\n  '{{$json[\"_e\"][\"descr\"]}}',\n  '{{$json[\"_e\"][\"type\"]}}',\n  '{{$json[\"_e\"][\"status\"]}}',\n  {{$json[\"priceNum\"]}},\n  {{$json[\"quantity\"]}},\n  '{{$json[\"_e\"][\"updatedAt\"]}}'::timestamp,\n  NOW(), TRUE,\n  '{{$json[\"priceRaw\"]}}',\n  '{{$json[\"updatedAtRaw\"]}}'\nWHERE NOT EXISTS (\n  SELECT 1 FROM spares_history\n   WHERE spare_code = '{{$json[\"_e\"][\"code\"]}}'\n     AND is_current = TRUE\n     AND spare_name        = '{{$json[\"_e\"][\"name\"]}}'\n     AND spare_description = '{{$json[\"_e\"][\"descr\"]}}'\n     AND spare_type        = '{{$json[\"_e\"][\"type\"]}}'\n     AND spare_status      = '{{$json[\"_e\"][\"status\"]}}'\n     AND price             = {{$json[\"priceNum\"]}}\n     AND quantity          = {{$json[\"quantity\"]}}\n     AND source_updated_at = '{{$json[\"_e\"][\"updatedAt\"]}}'::timestamp\n);\n\nUPDATE spares_history\n   SET price_raw = '{{$json[\"priceRaw\"]}}',\n       source_updated_at_raw = '{{$json[\"updatedAtRaw\"]}}'\n WHERE spare_code = '{{$json[\"_e\"][\"code\"]}}'\n   AND is_current = TRUE;\n\nINSERT INTO spares_current\n(spare_code, spare_name, spare_description, spare_type, spare_status,\n price, quantity, source_updated_at, price_raw, source_updated_at_raw)\nVALUES\n(\n  '{{$json[\"_e\"][\"code\"]}}',\n  '{{$json[\"_e\"][\"name\"]}}',\n  '{{$json[\"_e\"][\"descr\"]}}',\n  '{{$json[\"_e\"][\"type\"]}}',\n  '{{$json[\"_e\"][\"status\"]}}',\n  {{$json[\"priceNum\"]}},\n  {{$json[\"quantity\"]}},\n  '{{$json[\"_e\"][\"updatedAt\"]}}'::timestamp,\n  '{{$json[\"priceRaw\"]}}',\n  '{{$json[\"updatedAtRaw\"]}}'\n)\nON CONFLICT (spare_code) DO UPDATE SET\n  spare_name        = EXCLUDED.spare_name,\n  spare_description = EXCLUDED.spare_description,\n  spare_type        = EXCLUDED.spare_type,\n  spare_status      = EXCLUDED.spare_status,\n  price             = EXCLUDED.price,\n  quantity          = EXCLUDED.quantity,\n  source_updated_at = EXCLUDED.source_updated_at,\n  price_raw         = EXCLUDED.price_raw,\n  source_updated_at_raw = EXCLUDED.source_updated_at_raw;\n\nCOMMIT;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        592,
+        -368
+      ],
+      "id": "f8d44373-9ef4-42b7-a49e-5c1afbf87096",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "E1PX1YEF8yIZava3",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const esc = s => String(s ?? '').replace(/'/g, \"''\");\nconst s = $json;\n\nconst priceNum = Number(String(s.price).replace(',', '.'));\nlet uaSql = String(s.updatedAt || '').trim();\nif (uaSql.includes('T')) {\n  uaSql = uaSql.replace('T',' ').replace('Z','');\n  uaSql = uaSql.replace(/(\\.\\d{6})\\d+$/, '$1'); \n}\n\nconst priceRaw = String(s.price ?? '');\nconst updatedAtRaw = String(s.updatedAt ?? '');\n\nreturn {\n  json: {\n    ...s,\n    priceNum,\n    updatedAtSql: uaSql,\n    priceRaw,\n    updatedAtRaw,\n    _e: {\n      code:  esc(s.spareCode),\n      name:  esc(s.spareName),\n      descr: esc(s.spareDescription),\n      type:  esc(s.spareType),\n      status:esc(s.spareStatus),\n      updatedAt: esc(uaSql)\n    }\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        -368
+      ],
+      "id": "b41b0ae8-7be9-444e-b9c8-474d93f8151e",
+      "name": "Norm"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Norm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Codes": {
+      "main": [
+        [
+          {
+            "node": "Close missing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query1": {
+      "main": [
+        [
+          {
+            "node": "Collect Codes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Norm": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0e4ce6d3-179e-460f-b373-1af0558d6a34",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "82388081d661db493d5794588f9e07a2d0ea047e941702d43a0c238a1644809d"
+  },
+  "id": "LDFre6AAp1P1nGUe",
+  "tags": []
+}

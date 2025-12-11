@@ -1,0 +1,124 @@
+{
+  "name": "Отправка отчета",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH last_ver AS (\n  SELECT DISTINCT ON (spare_code)\n         spare_code, spare_name, spare_description, spare_type, spare_status,\n         price_raw, quantity, source_updated_at_raw\n  FROM spares_history\n  WHERE is_current = TRUE\n  ORDER BY spare_code, valid_from DESC\n)\nSELECT\n  spare_code            AS \"spareCode\",     \n  spare_name                  AS \"spareName\",\n  spare_description           AS \"spareDescription\",\n  spare_type                  AS \"spareType\",\n  spare_status                AS \"spareStatus\",\n  price_raw                   AS \"price\",\n  quantity,\n  source_updated_at_raw       AS \"updatedAt\"\nFROM last_ver\nORDER BY 1;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -496,
+        -16
+      ],
+      "id": "ff1da9fb-fea9-464c-bd74-bdc2057d2fbd",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "E1PX1YEF8yIZava3",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://212.237.219.35:8080/students/24/report/csv",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "text/csv"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -112,
+        -16
+      ],
+      "id": "5c825da2-46f6-4f00-b8d1-3b09934eaa06",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json);\n\nconst header = [\"spareCode\", \"spareName\", \"spareDescription\", \"spareType\", \"spareStatus\", \"price\", \"quantity\", \"updatedAt\"];\n\nconst csvRows = items.map(row => {\n  return header.map(fieldName => {\n     let val = String(row[fieldName] || '');\n     \n\n     return val.replace(/;/g, ',').replace(/\\n/g, ' ');\n  }).join(';'); \n});\n\nconst csvString = csvRows.join('\\n');\n\nreturn [\n  {\n    json: {\n      info: \"CSV generated successfully\" \n    },\n    binary: {\n      data: {\n        data: Buffer.from(csvString, 'utf8').toString('base64'),\n        mimeType: 'text/csv',\n        fileName: 'report.csv'\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        -16
+      ],
+      "id": "fe0f949d-7728-496b-be81-056c96dbfdf1",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -688,
+        -16
+      ],
+      "id": "b9fda5b7-60bc-4e8b-bc31-7a1c9546eb11",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a4335f7f-f214-4b39-b3df-eed5bd561ff9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "82388081d661db493d5794588f9e07a2d0ea047e941702d43a0c238a1644809d"
+  },
+  "id": "n2QBshW62DCcIi22",
+  "tags": []
+}
